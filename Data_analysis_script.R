@@ -453,6 +453,7 @@ dev.off()
 clusters<-levels(Idents(data))
 #clusters<-clusters[-c(11,14)]
 for (cluster in clusters){
+  message(paste0("Doing ", cluster))
   set<-subset(x = data, idents = cluster)
   rawcounts<-set@assays$RNA@counts
   annotation<-matrix(nrow=ncol(rawcounts),ncol=1, dimnames=list(colnames(rawcounts),"Treat"))
@@ -574,9 +575,9 @@ for (cluster in clusters){
     up$type<-"up"
     down$type<-"down"
     
-    up<-up[c(1:3),]
+    up<-up[c(1:2),]
     up<-up[order(up$Combined.Score),]
-    down<-down[c(1:3),]
+    down<-down[c(1:2),]
     down$Combined.Score<- (-1)*down$Combined.Score
     down<-down[order(down$Combined.Score),]
     gos<-rbind(down,up)
