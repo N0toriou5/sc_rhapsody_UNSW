@@ -4,6 +4,7 @@
 
 ##### Create working environment -----
 setwd("D:/Projects/Orazio/")
+library(apeglm)
 library(cowplot)
 library(DESeq2)
 library(dplyr)
@@ -233,6 +234,67 @@ FeaturePlot(data,pt.size = 1, features = "Mycn",cols = c("grey","red"),
 dev.off()
 save(data, file="results/000_clustering.rda")
 
+# Plot markers of interest on a cluster basis
+png("plots/000_ident_tsne_aggregate_clustering.png", w = 2000, h = 2000, res = 300)
+DimPlot(object = data, pt.size = .1, reduction = 'tsne', group.by = 'seurat_clusters', label = TRUE)
+dev.off()
+
+markers <- c("Mycn",
+             "Itgam",
+             "Cxcr4",
+             "Ly6g",
+             "Itgax",
+             "Il3ra",
+             "Fcgr1",
+             "Adgre1",
+             "Csf1r",
+             "Ly6c1",
+             "Itga2b",
+             "Fcer1a",
+             "Ifitm1",
+             "Cd3e",
+             "Il7r",
+             "Gzma",
+             "Cd4",
+             "Cd8a",
+             "Cd79a",
+             "Cd19",
+             "Ms4a1",
+             "Cd3d",
+             "Cd8b1",
+             "Trbc1",
+             "Trbc2",
+             "Trdc",
+             #"Trgc1",
+             #"Trgc2",
+             "Ncam1",
+             "Icam1")
+png("plots/000_violin_clustering.png", w = 6000, h = 3000, res = 300)
+VlnPlot(data, features = markers[1:6])
+dev.off()
+png("plots/000_violin_clustering2.png", w = 6000, h = 3000, res = 300)
+VlnPlot(data, features = markers[7:12])
+dev.off()
+png("plots/000_violin_clustering3.png", w = 6000, h = 3000, res = 300)
+VlnPlot(data, features = markers[13:18])
+dev.off()
+png("plots/000_violin_clustering4.png", w = 6000, h = 3000, res = 300)
+VlnPlot(data, features = markers[19:24])
+dev.off()
+png("plots/000_violin_clustering5.png", w = 6000, h = 3000, res = 300)
+VlnPlot(data, features = markers[25:28])
+dev.off()
+
+
+png("plots/000_Dotplot_clustering.png",h=2000,w=2500,res=300)
+DotPlot(
+  object = data, features = markers
+) + scale_colour_gradient2(low = "blue", mid = "white", high = "red")+
+  coord_flip() +xlab("")+ylab("")+ 
+  scale_y_discrete(limits = levels(data))+
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1))
+dev.off()
+
 # Assign cell types according to Jourdin's schema
 ######### New custom clustering
 levels(data$seurat_clusters) #32
@@ -414,15 +476,17 @@ for (cluster in clusters){
   dea<-DESeq(dds,parallel=FALSE,test="LRT",useT=TRUE, minmu=1e-6,minReplicatesForReplace=Inf,reduced=~1,fitType = "glmGamPoi")
   
   resultsNames(dea) #TreatTEPA"
-  res<-as.data.frame(results(dea,name="TreatTEPA"))
-  res[1:5,]
   res <- results(dea)
-  #res <- lfcShrink(dea,coef = "TreatTEPA",
-  #                res=res)
-  res<-as.data.frame(res)
+  res<-as.data.frame(results(dea,name="TreatTEPA"))
+  # res[1:5,]
+  # res <- results(dea)
+  # #res <- lfcShrink(dea,coef = "TreatTEPA",
+  # #                res=res)
+  # res<-as.data.frame(res)
   # Volcano
   res<-res[,-3]
   res<-na.omit(res)
+  res <- res[res$baseMean>=0.5,]
   res<-res[-grep("Rpl|Rps",rownames(res)),]
   res<-res[order(res$log2FoldChange),]
   dn<-rownames(res)[1:25]
