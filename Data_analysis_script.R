@@ -389,7 +389,31 @@ library(stringr)
 SaveH5Seurat(immune, filename = "results/Orazio.h5Seurat")
 Convert("results/Orazio.h5Seurat", dest = "results/Orazio.h5ad")
 source("D:/Archive/geneids.R")
+convertMouseGeneList(rownames(immune))
 
+library(dplyr)
+
+mouse_human_genes = read.csv("http://www.informatics.jax.org/downloads/reports/HOM_MouseHumanSequence.rpt",sep="\t")
+
+convert_mouse_to_human <- function(gene_list){
+  
+  output = c()
+  
+  for(gene in gene_list){
+    class_key = (mouse_human_genes %>% filter(Symbol == gene & Common.Organism.Name=="mouse, laboratory"))[['DB.Class.Key']]
+    if(!identical(class_key, integer(0)) ){
+      human_genes = (mouse_human_genes %>% filter(DB.Class.Key == class_key & Common.Organism.Name=="human"))[,"Symbol"]
+      for(human_gene in human_genes){
+        output = append(output,human_gene)
+      }
+    }
+  }
+  
+  return (output)
+}
+
+save(mouse_human_genes, file = "results/convertTable.rda")
+convert_mouse_to_human(rownames(immune))
 
 # Plot markers of interest on a cluster basis
 png("plots/000_ident_tsne_aggregate_clustering.png", w = 2000, h = 2000, res = 300)
