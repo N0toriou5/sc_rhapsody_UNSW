@@ -230,7 +230,7 @@ marker.excel.pages <- list('clust0' = top05 %>% filter(cluster==0),
                            "clust31"= top05 %>% filter(cluster==31))
 
 top05 <- top05[order(top05$avg_log2FC,decreasing = T),]
-write_xlsx(top05, "results/000_topgenes_cluster.xlsx")
+write_xlsx(marker.excel.pages, "results/000_topgenes_cluster.xlsx")
 
 png("plots/000_Mycn_staining.png",w=2500,h=2500,res=300)
 FeaturePlot(data,pt.size = 1, features = "Mycn",cols = c("grey","red"),
@@ -296,6 +296,304 @@ dev.off()
 # png("plots/000_PCA_ident_tumor_cellcycle.png", h = 1500, w = 3000, res = 300)
 # DimPlot(tumor, reduction = "tsne", split.by = "orig.ident")
 # dev.off()
+
+##### The DE Tumor side
+### Label treatment and ctrl
+tumor$Treat <- ifelse(str_detect(colnames(tumor), "C")==TRUE, "CTRL", "TEPA")
+table(Idents(tumor), tumor@meta.data$Treat)
+rawcounts <- tumor@assays$RNA@counts
+annotation <- matrix(nrow = ncol(rawcounts), ncol = 1, dimnames = list(colnames(rawcounts), "Treat"))
+annotation[, "Treat"] <- ifelse(str_detect(colnames(rawcounts), "C")==TRUE, "Ctrl", "TEPA")
+# DESeq2 block (filter out poorly expressed genes)
+dds <- DESeqDataSetFromMatrix(countData = rawcounts, colData = annotation, design = ~Treat)
+# low count filter - at least 10 with count of 5 or more
+# https://hbctraining.github.io/scRNA-seq/lessons/pseudobulk_DESeq2_scrnaseq.html
+# example: keep <- rowSums(counts(sim) >= 5) >= 10
+dds <- dds[rowSums(counts(dds)>=5)>=10,]
+dds$Treat <- relevel(dds$Treat, ref = "Ctrl")
+dds <- estimateSizeFactors(dds, type = "poscounts")
+
+scr <- computeSumFactors(dds)
+# use scran's sum factors:
+sizeFactors(dds) <- sizeFactors(scr)
+# Since our 'full' model only has one factor (Treat), the 'reduced' model (removing that factor) leaves us with nothing in our design formula.
+# DESeq2 cannot fit a model with nothing in the design formula, and so in the scenario where you have no additional covariates the intercept
+# is modeled using the syntax ~ 1.
+dea <- DESeq(dds, parallel = FALSE, test = "LRT", useT = TRUE, minmu = 1e-6,
+             minReplicatesForReplace = Inf, reduced = ~1, fitType = "glmGamPoi")
+
+resultsNames(dea) #TreatTEPA"
+res <- results(dea)
+res <- as.data.frame(results(dea,name="TreatTEPA"))
+# Volcano
+res <- res[, -3]
+res <- na.omit(res)
+res <- res[res$baseMean>=0.5,]
+res <- res[-grep("Rpl|Rps", rownames(res)),]
+res <-res[order(res$log2FoldChange),]
+dn <- rownames(res)[1:25]
+up <- rownames(res)[(nrow(res)-24):nrow(res)]
+labels <- c(up,dn)
+
+png(paste0("plots/000_DESEQ_","whole_tumor",".png"), w=2500,h=2500, res=300)
+#EnhancedVolcano(res,x="log2FoldChange",y="padj",lab=rownames(res))
+gp<-EnhancedVolcano(res, subtitle = "",
+                    lab = rownames(res),
+                    selectLab = labels,
+                    x = 'log2FoldChange',
+                    y = 'padj',
+                    xlim = c(-5, 5),
+                    #ylim = c(0,100),
+                    title = paste0("Whole Tumor",', TEPA vs. CTRL '),
+                    pCutoff = 0.05, #0.05 cutoff
+                    FCcutoff = 0.25, # 2-fold change
+                    labFace = "bold",
+                    labSize = 3,
+                    col = c('lightgrey', 'pink', 'lightblue', 'salmon'),
+                    colAlpha = 4/5,
+                    legendLabSize = 14,
+                    legendIconSize = 4.0,
+                    drawConnectors = TRUE,
+                    widthConnectors = 0.3,colConnectors = 'gray51',maxoverlapsConnectors = Inf,
+                    caption = paste0('Upregulated = ', nrow(res[res$log2FoldChange>0.25&res$padj<=0.05,]), ' genes',"\n",'Downregulated = ',
+                                     nrow(res[res$log2FoldChange< -0.25&res$padj<=0.05,]), ' genes'))+
+  theme(plot.title = element_text(hjust = 0.5))
+print(gp)
+dev.off()
+res <- res[order(res$padj),]
+write.xlsx(res, file = paste0("results/000_DESEQ_","whole_tumor",".xlsx"), row.names = T)
+save(res, file = paste0("results/000_DESEQ_","whole_tumor",".rda"))
+
+# GO
+
+dbs <- listEnrichrDbs()
+dbs <- c("WikiPathways_2019_Mouse", "KEGG_2019_Mouse", "HDSigDB_Mouse_2021")
+
+de <- res
+up <- rownames(de[de$log2FoldChange>0.25&de$padj<=0.05,])
+dn <- rownames(de[de$log2FoldChange< -0.25&de$padj<=0.05,])
+
+eup <- enrichr(up, dbs)
+edn <- enrichr(dn, dbs)
+
+# Wikipathways
+up <- eup$WikiPathways_2019_Mouse
+down <- edn$WikiPathways_2019_Mouse
+
+up$type<-"up"
+down$type<-"down"
+
+up<-up[c(1:10),]
+up<-up[order(up$Combined.Score),]
+down<-down[c(1:10),]
+down$Combined.Score<- (-1)*down$Combined.Score
+down<-down[order(down$Combined.Score),]
+gos<-rbind(down,up)
+gos$Term<-gsub("WP(.*)","",gos$Term)
+gos$Term<-paste0(gos$Term,ifelse(gos$P.value<=0.05,"*",""))
+if (sum(duplicated(gos$Term))==0){
+  #Diverging Barchart
+  gos$Term<-factor(gos$Term,levels = gos$Term)
+  png(paste0("plots/000_GO_DESEQ_","whole_tumor","_sc.png"),w=2500,h=1500,res=300)
+  gp<-ggplot(gos,aes(x=Term,y=Combined.Score,label=Combined.Score))+
+    geom_bar(stat='identity',aes(fill=type),width=.5,position='dodge')+
+    scale_fill_manual(name="Expression",
+                      labels=c("Down regulated","Up regulated"),
+                      values=c("down"="lightblue","up"="#f8766d"))+
+    labs(subtitle="",
+         title=paste0("Enriched in 7 days scTH-MYCN (","whole_tumor",")"))+
+    coord_flip()+
+    theme_bw()+ylab("EnrichR Combined Score")+
+    theme(plot.title = element_text(hjust = 0.5))
+  print(gp)
+  dev.off()
+} else {
+  # Wikipathways
+  up<-eup$WikiPathways_2019_Mouse
+  down<-edn$WikiPathways_2019_Mouse
+  
+  up$type<-"up"
+  down$type<-"down"
+  
+  up<-up[c(1:5),]
+  up<-up[order(up$Combined.Score),]
+  down<-down[c(1:5),]
+  down$Combined.Score<- (-1)*down$Combined.Score
+  down<-down[order(down$Combined.Score),]
+  gos<-rbind(down,up)
+  gos$Term<-gsub("WP(.*)","",gos$Term)
+  gos$Term<-paste0(gos$Term,ifelse(gos$P.value<=0.05,"*",""))
+  gos$Term<-factor(gos$Term,levels = gos$Term)
+  #Diverging Barchart
+  png(paste0("plots/000_GO_DESEQ_","whole_tumor","_sc.png"),w=2500,h=1500,res=300)
+  gp<-ggplot(gos,aes(x=Term,y=Combined.Score,label=Combined.Score))+
+    geom_bar(stat='identity',aes(fill=type),width=.5,position='dodge')+
+    scale_fill_manual(name="Expression",
+                      labels=c("Down regulated","Up regulated"),
+                      values=c("down"="lightblue","up"="#f8766d"))+
+    labs(subtitle="",
+         title=paste0("Enriched in 7 days scTH-MYCN (","whole_tumor",")"))+
+    coord_flip()+
+    theme_bw()+ylab("EnrichR Combined Score")+
+    theme(plot.title = element_text(hjust = 0.5))
+  print(gp)
+  dev.off()
+ }
+
+
+
+clusters<-levels(Idents(tumor))
+#clusters<-clusters[-c(11,14)]
+for (cluster in clusters){
+  message(paste0("Doing ", cluster))
+  set<-subset(x = tumor, idents = cluster)
+  rawcounts<-set@assays$RNA@counts
+  annotation<-matrix(nrow=ncol(rawcounts),ncol=1, dimnames=list(colnames(rawcounts),"Treat"))
+  annotation[,"Treat"]<-ifelse(str_detect(colnames(rawcounts),"C")==TRUE,"Ctrl","TEPA")
+  
+  # DESeq2 block (filter out poorly expressed genes)
+  dds<-DESeqDataSetFromMatrix(countData=rawcounts,colData=annotation,design=~Treat)
+  # low count filter - at least 10 with count of 5 or more
+  # https://hbctraining.github.io/scRNA-seq/lessons/pseudobulk_DESeq2_scrnaseq.html
+  # example: keep <- rowSums(counts(sim) >= 5) >= 10
+  dds<-dds[rowSums(counts(dds)>=5)>=10,]
+  dds$Treat<-relevel(dds$Treat,ref="Ctrl")
+  dds <- estimateSizeFactors(dds, type="poscounts")
+  
+  scr <- computeSumFactors(dds)
+  # use scran's sum factors:
+  sizeFactors(dds) <- sizeFactors(scr)
+  # Since our 'full' model only has one factor (Treat), the 'reduced' model (removing that factor) leaves us with nothing in our design formula.
+  # DESeq2 cannot fit a model with nothing in the design formula, and so in the scenario where you have no additional covariates the intercept
+  # is modeled using the syntax ~ 1.
+  dea<-DESeq(dds,parallel=FALSE,test="LRT",useT=TRUE, minmu=1e-6,minReplicatesForReplace=Inf,reduced=~1,fitType = "glmGamPoi")
+  
+  resultsNames(dea) #TreatTEPA"
+  res <- results(dea)
+  res<-as.data.frame(results(dea,name="TreatTEPA"))
+  # res[1:5,]
+  # res <- results(dea)
+  # #res <- lfcShrink(dea,coef = "TreatTEPA",
+  # #                res=res)
+  # res<-as.data.frame(res)
+  # Volcano
+  res<-res[,-3]
+  res<-na.omit(res)
+  res <- res[res$baseMean>=0.5,]
+  res<-res[-grep("Rpl|Rps",rownames(res)),]
+  res<-res[order(res$log2FoldChange),]
+  dn<-rownames(res)[1:25]
+  up<-rownames(res)[(nrow(res)-24):nrow(res)]
+  labels<-c(up,dn)
+  # Volcano Plots
+  
+  png(paste0("plots/006_DESEQ_",cluster,".png"), w=2500,h=2500, res=300)
+  #EnhancedVolcano(res,x="log2FoldChange",y="padj",lab=rownames(res))
+  gp<-EnhancedVolcano(res, subtitle = "",
+                      lab = rownames(res),
+                      selectLab = labels,
+                      x = 'log2FoldChange',
+                      y = 'padj',
+                      xlim = c(-5, 5),
+                      #ylim = c(0,100),
+                      title = paste0(cluster,', TEPA vs. CTRL '),
+                      pCutoff = 0.05, #0.05 cutoff
+                      FCcutoff = 0.25, # 2-fold change
+                      labFace = "bold",
+                      labSize = 3,
+                      col = c('lightgrey', 'pink', 'lightblue', 'salmon'),
+                      colAlpha = 4/5,
+                      legendLabSize = 14,
+                      legendIconSize = 4.0,
+                      drawConnectors = TRUE,
+                      widthConnectors = 0.3,colConnectors = 'gray51',maxoverlapsConnectors = Inf,
+                      caption = paste0('Upregulated = ', nrow(res[res$log2FoldChange>0.25&res$padj<=0.05,]), ' genes',"\n",'Downregulated = ',
+                                       nrow(res[res$log2FoldChange< -0.25&res$padj<=0.05,]), ' genes'))+
+    theme(plot.title = element_text(hjust = 0.5))
+  print(gp)
+  dev.off()
+  res<-res[order(res$padj),]
+  write.xlsx(res,file=paste0("results/006_DESEQ_",cluster,".xlsx"),row.names=T)
+  save(res,file=paste0("results/006_DESEQ_",cluster,".rda"))
+  # GO
+  
+  dbs<-listEnrichrDbs()
+  dbs<-c("WikiPathways_2019_Mouse","KEGG_2019_Mouse","HDSigDB_Mouse_2021")
+  
+  de<-res
+  up<-rownames(de[de$log2FoldChange>0.25&de$padj<=0.05,])
+  dn<-rownames(de[de$log2FoldChange< -0.25&de$padj<=0.05,])
+  
+  eup<-enrichr(up,dbs)
+  edn<-enrichr(dn,dbs)
+  
+  # Wikipathways
+  up<-eup$WikiPathways_2019_Mouse
+  down<-edn$WikiPathways_2019_Mouse
+  
+  up$type<-"up"
+  down$type<-"down"
+  
+  up<-up[c(1:10),]
+  up<-up[order(up$Combined.Score),]
+  down<-down[c(1:10),]
+  down$Combined.Score<- (-1)*down$Combined.Score
+  down<-down[order(down$Combined.Score),]
+  gos<-rbind(down,up)
+  gos$Term<-gsub("WP(.*)","",gos$Term)
+  gos$Term<-paste0(gos$Term,ifelse(gos$P.value<=0.05,"*",""))
+  if (sum(duplicated(gos$Term))==0){
+    #Diverging Barchart
+    gos$Term<-factor(gos$Term,levels = gos$Term)
+    png(paste0("plots/006_GO_DESEQ_",cluster,"_sc.png"),w=2500,h=1500,res=300)
+    gp<-ggplot(gos,aes(x=Term,y=Combined.Score,label=Combined.Score))+
+      geom_bar(stat='identity',aes(fill=type),width=.5,position='dodge')+
+      scale_fill_manual(name="Expression",
+                        labels=c("Down regulated","Up regulated"),
+                        values=c("down"="lightblue","up"="#f8766d"))+
+      labs(subtitle="",
+           title=paste0("Enriched in 7 days scTH-MYCN (",cluster,")"))+
+      coord_flip()+
+      theme_bw()+ylab("EnrichR Combined Score")+
+      theme(plot.title = element_text(hjust = 0.5))
+    print(gp)
+    dev.off()
+  } else {
+    # Wikipathways
+    n <- which(duplicated(gos$Term))
+    n <- n[1]
+    n <- as.integer((n - 2)/2)
+    up<-eup$WikiPathways_2019_Mouse
+    down<-edn$WikiPathways_2019_Mouse
+    
+    up$type<-"up"
+    down$type<-"down"
+    
+    up<-up[c(1:2),]
+    up<-up[order(up$Combined.Score),]
+    down<-down[c(1:2),]
+    down$Combined.Score<- (-1)*down$Combined.Score
+    down<-down[order(down$Combined.Score),]
+    gos<-rbind(down,up)
+    gos$Term<-gsub("WP(.*)","",gos$Term)
+    gos$Term<-paste0(gos$Term,ifelse(gos$P.value<=0.05,"*",""))
+    gos$Term<-factor(gos$Term,levels = gos$Term)
+    #Diverging Barchart
+    png(paste0("plots/006_GO_DESEQ_",cluster,"_sc.png"),w=2500,h=1500,res=300)
+    gp<-ggplot(gos,aes(x=Term,y=Combined.Score,label=Combined.Score))+
+      geom_bar(stat='identity',aes(fill=type),width=.5,position='dodge')+
+      scale_fill_manual(name="Expression",
+                        labels=c("Down regulated","Up regulated"),
+                        values=c("down"="lightblue","up"="#f8766d"))+
+      labs(subtitle="",
+           title=paste0("Enriched in 7 days scTH-MYCN (",cluster,")"))+
+      coord_flip()+
+      theme_bw()+ylab("EnrichR Combined Score")+
+      theme(plot.title = element_text(hjust = 0.5))
+    print(gp)
+    dev.off()
+  }
+}
 
 #### Stage 2: investigate the immune clusters
 immune <- subset(data, idents = c(2, 4, 6, 7, 8, 11, 15, 20, 25), invert = TRUE)
