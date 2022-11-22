@@ -382,6 +382,46 @@ g <- c("Ms4a1", "Cd19")
 FeaturePlot(immune, features = g, reduction = "tsne")
 dev.off()
 
+immune.markers <- FindAllMarkers(object = immune, only.pos = FALSE, min.pct = 0.25, min.diff.pct = 0.25)
+
+### how many markers per cluster
+all.markers %>% group_by(cluster) %>% summarize(n_p05 = sum(p_val_adj<0.05),
+                                                npe10 = sum(p_val_adj<1e-10),
+                                                npe100 = sum(p_val_adj<1e-100),
+                                                np0 = sum(p_val_adj==0))
+### write file with markers having adj p < 0.05
+top05 <- all.markers %>% group_by(cluster) %>% filter(p_val_adj<0.05)
+
+### create a single file
+marker.excel.pages <- list('clust3' = top05 %>% filter(cluster==3),
+                           'clust9' = top05 %>% filter(cluster==9),
+                           'clust10' = top05 %>% filter(cluster==10),
+                           'clust12' = top05 %>% filter(cluster==12),
+                           'clust13' = top05 %>% filter(cluster==13),
+                           'clust14' = top05 %>% filter(cluster==14),
+                           'clust17' = top05 %>% filter(cluster==17),
+                           'clust18' = top05 %>% filter(cluster==18),
+                           'clust19' = top05 %>% filter(cluster==19),
+                           'clust21' = top05 %>% filter(cluster==21),
+                           'clust23' = top05 %>% filter(cluster==23),
+                           'clust24' = top05 %>% filter(cluster==24),
+                           "clust26"= top05 %>% filter(cluster==26),
+                           "clust27"= top05 %>% filter(cluster==27),
+                           "clust28"= top05 %>% filter(cluster==28))
+
+
+write_xlsx(marker.excel.pages, "results/000_topgenes_cluster_immune.xlsx")
+
+png("plots/000_Monocytes.png", h = 1500, w = 2500, res = 300)
+g <- c("S100a9", "S100a8", "Cd68", "Cd14")
+FeaturePlot(immune, features = g, reduction = "tsne")
+dev.off()
+
+png("plots/000_Tcells.png", h = 1500, w = 2500, res = 300)
+g <- c("Cd4", "Cd8a", "Trdc", "Trbc2")
+FeaturePlot(immune, features = g, reduction = "tsne")
+dev.off()
+
 library(Seurat)
 library(SeuratObject)
 library(SeuratDisk) #reference-based mapping, remotes::install_github("mojaveazure/seurat-disk")
@@ -413,7 +453,7 @@ convert_mouse_to_human <- function(gene_list){
 }
 
 save(mouse_human_genes, file = "results/convertTable.rda")
-convert_mouse_to_human(rownames(immune))
+convert_mouse_to_human(rownames(immune)[1:5000])
 
 # Plot markers of interest on a cluster basis
 png("plots/000_ident_tsne_aggregate_clustering.png", w = 2000, h = 2000, res = 300)
