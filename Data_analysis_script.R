@@ -5,6 +5,7 @@
 ##### Create working environment -----
 setwd("D:/Projects/Orazio/")
 library(apeglm)
+library(babelgene)
 library(cowplot)
 library(DESeq2)
 library(dplyr)
@@ -161,7 +162,10 @@ data <- FindClusters(object = data, resolution = 1.2, reduction= "harmony") # or
 data <- RunTSNE(data, dims = 1:17,tsne.method = "Rtsne", reduction = "harmony")
 data <- RunUMAP(data, dims = 1:17, reduction = "harmony")
 DimPlot(data, reduction = "tsne", label = T)
-DimPlot(data, group.by = "orig.ident", reduction = "tsne")
+png("plots/000_tsne_origin.png", w = 2000, h = 2000, res = 300)
+DimPlot(data, group.by = "orig.ident", reduction = "tsne", pt.size = 1.2) +
+  ggtitle("Original Sample")
+dev.off()
 png("plots/000_tsne_all.png", w = 2000, h = 2000, res = 300)
 DimPlot(object = data,pt.size = 1.2, reduction = 'tsne', group.by = 'seurat_clusters', label = TRUE) +
   ggtitle(paste(as.character(nrow(data@meta.data)), "cells (TEPA and Control)")) +
@@ -233,6 +237,159 @@ FeaturePlot(data,pt.size = 1, features = "Mycn",cols = c("grey","red"),
             max.cutoff = "q90", reduction = "tsne")
 dev.off()
 save(data, file="results/000_clustering.rda")
+
+# Stage 1: unveil tumor heterogeneity
+tumor <- subset(data, idents = c(2, 4, 6, 7, 8, 11, 15, 20, 25))
+tumor <- subset(tumor, subset = orig.ident == c("D3C2","D7T"))
+
+# Visualize QC metrics as a violin plot for tumor
+png("plots/000_post_filter_QC_Tumor.png", w = 4000, h = 2000, res = 300)
+VlnPlot(tumor, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+dev.off()
+
+png("plots/000_PCA_ident_tumor.png", h = 1500, w = 1500, res = 300)
+DimPlot(object = tumor, reduction = "pca", pt.size = .1, group.by = "orig.ident")
+dev.off()
+
+png("plots/000_PCA_ident_tumor_origIdent.png", h = 1500, w = 1500, res = 300)
+DimPlot(object = tumor, reduction = "pca", pt.size = .1)
+dev.off()
+
+png("plots/000_TSNE_ident_tumor.png", h = 1500, w = 3000, res = 300)
+DimPlot(object = tumor, reduction = "tsne", pt.size = 1.2, split.by = "orig.ident")
+dev.off()
+
+tumor <- subset(tumor, subset = nFeature_RNA > 2000 & nFeature_RNA < 7500 & percent.mt < 20 & nCount_RNA <= 35000
+                & nCount_RNA >= 10000)
+
+png("plots/000_post_filter_QC_Tumor2.png", w = 4000, h = 2000, res = 300)
+VlnPlot(tumor, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+dev.off()
+
+# ##### Restart clustering
+# # Seurat Method
+# tumor <- FindVariableFeatures(tumor, selection.method = "vst", nfeatures = 2000) #Inf
+# # Data Scaling
+# tumor <- ScaleData(tumor)
+# tumor <- RunPCA(tumor, pc.genes = data@var.genes, npcs = 20, verbose = FALSE)
+# 
+# p1 <- DimPlot(object = tumor, reduction = "pca", pt.size = .1, group.by = "orig.ident")
+# p1
+# 
+# png("plots/000_PCA_ident_tumor_post.png", h = 1500, w = 1500, res = 300)
+# DimPlot(object = tumor, reduction = "pca", pt.size = .1, group.by = "orig.ident")
+# dev.off()
+# 
+# # A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
+# # segregate this list into markers of G2/M phase and markers of S phase
+# s.genes <- cc.genes$s.genes
+# g2m.genes <- cc.genes$g2m.genes
+# s.genes <- orthologs(s.genes, species = "mouse")[,5]
+# g2m.genes <- orthologs(g2m.genes, species = "mouse")[,5]
+# 
+# # Assign cell cycle score
+# tumor <- CellCycleScoring(tumor, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+# 
+# # view cell cycle scores and phase assignments
+# head(tumor[[]])
+# tumor <- RunPCA(tumor, features = c(s.genes, g2m.genes))
+# png("plots/000_PCA_ident_tumor_cellcycle.png", h = 1500, w = 3000, res = 300)
+# DimPlot(tumor, reduction = "tsne", split.by = "orig.ident")
+# dev.off()
+
+#### Stage 2: investigate the immune clusters
+immune <- subset(data, idents = c(2, 4, 6, 7, 8, 11, 15, 20, 25), invert = TRUE)
+
+# Visualize QC metrics as a violin plot for tumor
+png("plots/000_post_filter_QC_Immune.png", w = 4000, h = 2000, res = 300)
+VlnPlot(immune, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+dev.off()
+
+png("plots/000_PCA_ident_Immune.png", h = 1500, w = 1500, res = 300)
+DimPlot(object = immune, reduction = "pca", pt.size = .1, group.by = "orig.ident")
+dev.off()
+
+png("plots/000_tsne_ident_Immune_labelled.png", h = 1500, w = 1500, res = 300)
+DimPlot(object = immune, reduction = "tsne", pt.size = 1, label = TRUE)
+dev.off()
+
+png("plots/000_PCA_ident_immune_origIdent.png", h = 1500, w = 1500, res = 300)
+DimPlot(object = immune, reduction = "pca", pt.size = .1)
+dev.off()
+
+png("plots/000_TSNE_ident_immune1.png", h = 1500, w = 4500, res = 300)
+DimPlot(object = immune, reduction = "tsne", pt.size = 1.2, split.by = "orig.ident")
+dev.off()
+
+####### Show markers!
+png("plots/000_cd4.png", h = 1500, w = 1500, res = 300)
+FeaturePlot(immune, features = "Cd4", reduction = "tsne")
+dev.off()
+
+immune <- subset(immune, subset = nFeature_RNA > 1500 & nFeature_RNA < 4000 & percent.mt < 20 & nCount_RNA <= 20000
+                & nCount_RNA >= 5000)
+
+png("plots/000_post_filter_QC_Immune2.png", w = 4000, h = 2000, res = 300)
+VlnPlot(immune, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+dev.off()
+
+idx <- which(table(immune@meta.data$seurat_clusters)<=20)
+groups <- names(idx)
+immune <- subset(data, idents = c(0,1,2,4,5,6,7,8,11,15,16,20,22,25,29,30,31), invert = TRUE)
+
+png("plots/000_tsne_real.png", h = 1500, w = 1500, res = 300)
+DimPlot(object = immune, reduction = "tsne", pt.size = 1, label = TRUE)
+dev.off()
+
+markers <- c("Itgam",
+             "Cxcr4",
+             "Ly6g",
+             "Itgax",
+             "Il3ra",
+             "Fcgr1",
+             "Adgre1",
+             "Csf1r",
+             "Ly6c1",
+             "Itga2b",
+             "Fcer1a",
+             "Ifitm1",
+             "Cd3e",
+             "Il7r",
+             "Gzma",
+             "Cd4",
+             "Cd8a",
+             "Cd79a",
+             "Cd19",
+             "Ms4a1",
+             "Cd3d",
+             "Cd8b1",
+             "Trbc1",
+             "Trbc2",
+             "Trdc",
+             "Ncam1",
+             "Icam1")
+
+png("plots/000_Dotplot_immune_clustering.png",h=2000,w=2500,res=300)
+DotPlot(
+  object = immune, features = markers
+) + scale_colour_gradient2(low = "blue", mid = "white", high = "red")+
+  coord_flip() +xlab("")+ylab("")+ 
+  scale_y_discrete(limits = levels(immune))+
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1))
+dev.off()
+png("plots/000_Bcells.png", h = 1500, w = 2500, res = 300)
+g <- c("Ms4a1", "Cd19")
+FeaturePlot(immune, features = g, reduction = "tsne")
+dev.off()
+
+library(Seurat)
+library(SeuratObject)
+library(SeuratDisk) #reference-based mapping, remotes::install_github("mojaveazure/seurat-disk")
+library(stringr)
+SaveH5Seurat(immune, filename = "results/Orazio.h5Seurat")
+Convert("results/Orazio.h5Seurat", dest = "results/Orazio.h5ad")
+source("D:/Archive/geneids.R")
+
 
 # Plot markers of interest on a cluster basis
 png("plots/000_ident_tsne_aggregate_clustering.png", w = 2000, h = 2000, res = 300)
