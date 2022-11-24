@@ -595,6 +595,22 @@ for (cluster in clusters){
   }
 }
 
+##### use slalom and see what's next
+library(slalom)
+exprs_matrix <- as.matrix(tumor@assays$RNA@data)
+sce <- SingleCellExperiment::SingleCellExperiment(assays =  list(logcounts =  exprs_matrix))
+gmtfile <- "results/mh.all.v2022.1.Mm.symbols.gmt"
+genesets <- GSEABase::getGmt(gmtfile)
+# Generate a f-scLVM model
+model <- newSlalomModel(sce, genesets)
+# 50 annotated factors retained;  393 annotated factors dropped.
+# 4016  genes retained for analysis.
+# Initialize it
+model <- initSlalom(model)
+# Train it
+model <- trainSlalom(model, nIterations =  10000) # train the model until it converges
+save(model, file =  "results/000_slalom.rda")
+
 #### Stage 2: investigate the immune clusters
 immune <- subset(data, idents = c(2, 4, 6, 7, 8, 11, 15, 20, 25), invert = TRUE)
 
