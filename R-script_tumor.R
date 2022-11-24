@@ -200,6 +200,8 @@ marker.excel.pages <- list('clust0' = top05 %>% filter(cluster==0),
                            'clust9' = top05 %>% filter(cluster==9),
                            'clust10' = top05 %>% filter(cluster==10))
 write_xlsx(marker.excel.pages, "results/000_topgenes_cluster_tumor.xlsx")
+
+# exclude immune cells
 data <- subset(data, ident = c(8,9,10), invert = TRUE)
 DimPlot(data)
 png("plots/000_umap_origin_tumor_no_immune.png", w = 2000, h = 2000, res = 300)
@@ -214,6 +216,9 @@ dev.off()
 
 png("plots/000_PCA_tumor_only.png", h = 1500, w = 1500, res = 300)
 DimPlot(data, reduction = "pca", group.by = "orig.ident")
+dev.off()
+png("plots/000_features.png", w = 3000, h = 1500, res = 300)
+FeaturePlot(data, features = c("Trbc2","Cd68"))
 dev.off()
 
 #### Taking out all immune cells left, the sign of a batch effect comes out!
@@ -258,7 +263,7 @@ dn <- rownames(res)[1:25]
 up <- rownames(res)[(nrow(res)-24):nrow(res)]
 labels <- c(up,dn)
 
-png("plots/000_DESEQ_whole_tumor.png", w=2500,h=2500, res=300)
+png("plots/000_NB_Tumor.png", w=2500,h=2500, res=300)
 #EnhancedVolcano(res,x="log2FoldChange",y="padj",lab=rownames(res))
 gp<-EnhancedVolcano(res, subtitle = "",
                     lab = rownames(res),
@@ -277,7 +282,7 @@ gp<-EnhancedVolcano(res, subtitle = "",
                     legendLabSize = 14,
                     legendIconSize = 4.0,
                     drawConnectors = TRUE,
-                    widthConnectors = 0.3,colConnectors = 'gray51',maxoverlapsConnectors = Inf,
+                    widthConnectors = 0.3, colConnectors = 'gray51', maxoverlapsConnectors = Inf,
                     caption = paste0('Upregulated = ', nrow(res[res$log2FoldChange>0.25&res$padj<=0.05,]), ' genes',"\n",'Downregulated = ',
                                      nrow(res[res$log2FoldChange< -0.25&res$padj<=0.05,]), ' genes'))+
   theme(plot.title = element_text(hjust = 0.5))
@@ -317,7 +322,7 @@ gos$Term<-paste0(gos$Term,ifelse(gos$P.value<=0.05,"*",""))
 if (sum(duplicated(gos$Term))==0){
   #Diverging Barchart
   gos$Term<-factor(gos$Term,levels = gos$Term)
-  png(paste0("plots/000_GO_DESEQ_","whole_tumor","_sc.png"),w=2500,h=1500,res=300)
+  png("plots/000_GO_NB_sc.png",w=2500,h=1500,res=300)
   gp<-ggplot(gos,aes(x=Term,y=Combined.Score,label=Combined.Score))+
     geom_bar(stat='identity',aes(fill=type),width=.5,position='dodge')+
     scale_fill_manual(name="Expression",
@@ -562,6 +567,38 @@ dim(res2)
 
 # GO
 res2 <- res2[-grep("Rpl|Rps", rownames(res2)),]
+res2<-res2[order(res2$avg_log2FC),]
+dn<-rownames(res2)[1:25]
+up<-rownames(res2)[(nrow(res2)-24):nrow(res2)]
+labels<-c(up,dn)
+# Volcano Plots
+
+png("plots/000_MAST_volcano.png", w=2500,h=2500, res=300)
+#EnhancedVolcano(res,x="log2FoldChange",y="padj",lab=rownames(res))
+gp<-EnhancedVolcano(res2, subtitle = "",
+                    lab = rownames(res2),
+                    selectLab = labels,
+                    x = 'avg_log2FC',
+                    y = 'p_val_adj',
+                    xlim = c(-5, 5),
+                    #ylim = c(0,100),
+                    title = "MAST, TEPA vs. Ctrl",
+                    pCutoff = 0.05, #0.05 cutoff
+                    FCcutoff = 0.25, # 2-fold change
+                    labFace = "bold",
+                    labSize = 3,
+                    col = c('lightgrey', 'pink', 'lightblue', 'salmon'),
+                    colAlpha = 4/5,
+                    legendLabSize = 14,
+                    legendIconSize = 4.0,
+                    drawConnectors = TRUE,
+                    widthConnectors = 0.3,colConnectors = 'gray51',maxoverlapsConnectors = Inf,
+                    caption = paste0('Upregulated = ', nrow(res2[res2$avg_log2FC>0.25&res2$p_val_adj<=0.05,]), ' genes',"\n",'Downregulated = ',
+                                     nrow(res2[res2$avg_log2FC< -0.25&res2$p_val_adj<=0.05,]), ' genes'))+
+  theme(plot.title = element_text(hjust = 0.5))
+print(gp)
+dev.off()
+
 de <- res2
 up <- rownames(de[de$avg_log2FC>0.25&de$p_val_adj<=0.05,])
 dn <- rownames(de[de$avg_log2FC< -0.25&de$p_val_adj<=0.05,])
@@ -608,9 +645,9 @@ if (sum(duplicated(gos$Term))==0){
   up$type<-"up"
   down$type<-"down"
   
-  up<-up[c(1:2),]
+  up<-up[c(1:1),]
   up<-up[order(up$Combined.Score),]
-  down<-down[c(1:2),]
+  down<-down[c(1:1),]
   down$Combined.Score<- (-1)*down$Combined.Score
   down<-down[order(down$Combined.Score),]
   gos<-rbind(down,up)
